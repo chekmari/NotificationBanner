@@ -397,15 +397,13 @@ open class BaseNotificationBanner: UIView {
 
             if let parentViewController = parentViewController, parentViewController.view != nil {
                 parentViewController.view.addSubview(self)
-                if statusBarShouldBeShown() {
-                    appWindow?.windowLevel = UIWindow.Level.normal
-                }
+                // когда показываем под навбаром/в VC — уровень окна трогать не надо
             } else {
                 appWindow?.addSubview(self)
                 if statusBarShouldBeShown() && !(parentViewController == nil && bannerPosition == .top) {
-                    appWindow?.windowLevel = UIWindow.Level.normal
+                    resetWindowLevelIfNeeded() // .normal
                 } else {
-                    appWindow?.windowLevel = UIWindow.Level.statusBar + 1
+                    elevateWindowLevelIfNeeded() // .statusBar + 1
                 }
             }
 
@@ -605,11 +603,17 @@ open class BaseNotificationBanner: UIView {
             
             self.delegate?.notificationBannerDidDisappear(self)
 
-            self.bannerQueue.showNext(callback: { (isEmpty) in
-                if isEmpty || self.statusBarShouldBeShown() {
-                    self.appWindow?.windowLevel = UIWindow.Level.normal
+            self.bannerQueue.showNext { isEmpty in
+                // ВАЖНО: откладываем смену уровня окна на следующий runloop,
+                // чтобы не пересеклась с завершающей анимацией и удалением из суперью
+                DispatchQueue.main.async {
+                    if isEmpty || self.statusBarShouldBeShown() {
+                        self.resetWindowLevelIfNeeded()
+                    } else {
+                        self.elevateWindowLevelIfNeeded()
+                    }
                 }
-            })
+            }
         }
     }
 
@@ -743,6 +747,26 @@ open class BaseNotificationBanner: UIView {
         accessibilityLabel = bannerAccessibilityLabel
         isAccessibilityElement = true
         UIAccessibility.post(notification: .screenChanged, argument: self)
+    }
+
+    private func elevateWindowLevelIfNeeded() {
+        guard parentViewController == nil else { return }
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self.appWindow?.windowLevel = .statusBar + 1
+            CATransaction.commit()
+        }
+    }
+
+    private func resetWindowLevelIfNeeded() {
+        guard parentViewController == nil else { return }
+        UIView.performWithoutAnimation {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            self.appWindow?.windowLevel = .normal
+            CATransaction.commit()
+        }
     }
 }
 
